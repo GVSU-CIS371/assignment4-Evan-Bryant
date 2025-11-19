@@ -1,15 +1,8 @@
 <template>
-  <div
-    class="baseBeverage"
-    :style="{ backgroundColor: beverageStore.currentBase?.color }"
-  ></div>
+  <div class="baseBeverage"></div>
 </template>
 
-<script setup lang="ts">
-import { useBeverageStore } from "../stores/beverageStore";
-
-const beverageStore = useBeverageStore();
-</script>
+<script setup lang="ts"></script>
 
 <style scoped>
 .baseBeverage {
