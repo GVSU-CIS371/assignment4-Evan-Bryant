@@ -1,8 +1,7 @@
 import { defineStore } from "pinia";
+import { addDoc, collection, getDocs, query } from "firebase/firestore";
+import { db } from "../firebase";
 import tempsData from "../data/tempretures.json";
-import basesData from "../data/bases.json";
-import creamersData from "../data/creamers.json";
-import syrupsData from "../data/syrups.json";
 import type {
   BaseBeverageType,
   CreamerType,
@@ -10,70 +9,93 @@ import type {
   BeverageType,
 } from "../types/beverage";
 
+type BeverageCollections = "bases" | "creamers" | "syrups" | "beverages";
+
+const getCollectionDocs = async <T>(collectionName: BeverageCollections) => {
+  const snap = await getDocs(query(collection(db, collectionName)));
+  return snap.docs.map(
+    (doc) =>
+      ({
+        id: doc.id,
+        ...doc.data(),
+      } as T)
+  );
+};
+
 export const useBeverageStore = defineStore("BeverageStore", {
   state: () => ({
     temps: tempsData as string[],
-    bases: basesData as BaseBeverageType[],
-    creamers: creamersData as CreamerType[],
-    syrups: syrupsData as SyrupType[],
-
-    currentTemp: (tempsData as string[])[0],
-    currentBaseId: (basesData as BaseBeverageType[])[0]?.id || "",
-    currentCreamerId: (creamersData as CreamerType[])[0]?.id || "",
-    currentSyrupId: (syrupsData as SyrupType[])[0]?.id || "",
-
+    bases: [] as BaseBeverageType[],
+    creamers: [] as CreamerType[],
+    syrups: [] as SyrupType[],
     beverages: [] as BeverageType[],
-    selectedBeverageId: "" as string,
+    currentBase: null as BaseBeverageType | null,
+    currentCreamer: null as CreamerType | null,
+    currentSyrup: null as SyrupType | null,
+    currentTemp: ((tempsData as string[])[0] as string) || "Hot",
   }),
 
   getters: {
-    currentBase(state): BaseBeverageType {
-      return (
-        state.bases.find((b) => b.id === state.currentBaseId) || state.bases[0]
-      );
-    },
-    currentCreamer(state): CreamerType {
-      return (
-        state.creamers.find((c) => c.id === state.currentCreamerId) ||
-        state.creamers[0]
-      );
-    },
-    currentSyrup(state): SyrupType {
-      return (
-        state.syrups.find((s) => s.id === state.currentSyrupId) || state.syrups[0]
-      );
-    },
     isIced(state): boolean {
       return state.currentTemp === "Cold";
     },
   },
 
   actions: {
-    makeBeverage(name: string) {
-      const cleanName = (name || "").trim();
-      if (!cleanName) return;
+    async init() {
+      if (this.bases.length) return;
 
-      const id = `bev_${Date.now()}`;
-      const beverage: BeverageType = {
-        id,
-        name: cleanName,
-        temp: this.currentTemp,
-        base: this.currentBase,
-        syrup: this.currentSyrup,
-        creamer: this.currentCreamer,
-      };
-      this.beverages.push(beverage);
-      this.selectedBeverageId = id;
+      const [bases, creamers, syrups, beverages] = await Promise.all([
+        getCollectionDocs<BaseBeverageType>("bases"),
+        getCollectionDocs<CreamerType>("creamers"),
+        getCollectionDocs<SyrupType>("syrups"),
+        getCollectionDocs<BeverageType>("beverages"),
+      ]);
+
+      this.bases = bases;
+      this.creamers = creamers;
+      this.syrups = syrups;
+      this.beverages = beverages;
+
+      this.currentBase = this.bases[0] || null;
+      this.currentCreamer = this.creamers[0] || null;
+      this.currentSyrup = this.syrups[0] || null;
     },
-    showBeverage(id: string) {
-      const bev = this.beverages.find((b) => b.id === id);
-      if (!bev) return;
-      this.selectedBeverageId = id;
-      this.currentTemp = bev.temp;
-      this.currentBaseId = bev.base.id;
-      this.currentCreamerId = bev.creamer.id;
-      this.currentSyrupId = bev.syrup.id;
+    async makeBeverage(name: string) {
+      if (
+        !this.currentBase ||
+        !this.currentCreamer ||
+        !this.currentSyrup ||
+        !this.currentTemp
+      ) {
+        return;
+      }
+
+      const cleanName = (name || "").trim();
+      if (!cleanName) {
+        return;
+      }
+
+      const newBeverage = {
+        name: cleanName,
+        base: this.currentBase,
+        creamer: this.currentCreamer,
+        syrup: this.currentSyrup,
+        temp: this.currentTemp,
+      };
+
+      const docRef = await addDoc(collection(db, "beverages"), newBeverage);
+
+      this.beverages.push({
+        id: docRef.id,
+        ...newBeverage,
+      });
+    },
+    showBeverage(bev: BeverageType) {
+      this.currentBase = bev.base;
+      this.currentCreamer = bev.creamer;
+      this.currentSyrup = bev.syrup;
+      this.currentTemp = bev.temp || (this.temps[0] as string) || this.currentTemp;
     },
   },
-  persist: true,
 });
